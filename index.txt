@@ -82,7 +82,144 @@ ftp 192.168.56.101
 put ~/Desktop/file.txt   # upload file to server
 get file.txt             # download file from server
 bye
+Step 1: Assign Network Access
 
+First, make sure both VMs can communicate:
+
+In VirtualBox/VMware, set Network Adapter to:
+
+Either Bridged Adapter (both on same LAN)
+
+Or Host-Only Adapter / Internal Network (for private sharing)
+
+Find IP of each VM:
+
+ip addr show
+
+
+Example:
+
+VM1: 192.168.56.101
+
+VM2: 192.168.56.102
+
+Check connectivity:
+
+ping 192.168.56.101
+
+🧰 Step 2: Install FTP Server on VM1 (Server)
+sudo apt update
+sudo apt install vsftpd -y
+
+🧩 Step 3: Configure FTP Server
+
+Edit config file:
+
+sudo nano /etc/vsftpd.conf
+
+
+Uncomment or ensure these lines exist:
+
+listen=YES
+listen_ipv6=NO
+anonymous_enable=NO
+local_enable=YES
+write_enable=YES
+chroot_local_user=YES
+
+
+(Optional, to allow uploads)
+Add at the end:
+
+allow_writeable_chroot=YES
+
+
+Save and exit (Ctrl+O, Ctrl+X).
+
+Restart service:
+
+sudo systemctl restart vsftpd
+sudo systemctl enable vsftpd
+
+🧱 Step 4: Create FTP User & Directory
+sudo adduser ftpuser
+
+
+Set password when prompted.
+
+Create shared folder:
+
+sudo mkdir -p /home/ftpuser/ftp_share
+sudo chown ftpuser:ftpuser /home/ftpuser/ftp_share
+sudo chmod 755 /home/ftpuser/ftp_share
+
+🌐 Step 5: Open Firewall (if enabled)
+sudo ufw allow 20/tcp
+sudo ufw allow 21/tcp
+sudo ufw status
+
+💻 Step 6: Access from Client (VM2)
+
+Option 1: Using ftp command
+
+ftp 192.168.56.101
+
+
+Then enter:
+
+Name: ftpuser
+Password: (the password you set)
+
+
+List files:
+
+ls
+
+
+Download a file:
+
+get filename.txt
+
+
+Upload a file:
+
+put myfile.txt
+
+
+Exit:
+
+bye
+
+🌈 Optional GUI Access
+
+You can also access it from File Manager in Ubuntu:
+
+Press Ctrl + L
+
+Enter:
+
+ftp://192.168.56.101
+
+
+Enter username and password when asked.
+
+✅ Verification
+
+To verify FTP is working:
+
+sudo systemctl status vsftpd
+
+
+and on the client, list directory contents:
+
+ftp> ls
+
+🧠 Quick Summary
+Role	IP	Software	Command
+Server	192.168.56.101	vsftpd	sudo apt install vsftpd
+Client	192.168.56.102	ftp	ftp 192.168.56.101
+
+Would you like me to show how to automatically mount the FTP folder on the client (so it appears like a normal folder in VM2)?
 hhtp-cd /path/to/files
 python3 -m http.server 8000
 client import urllib.request
@@ -209,3 +346,4 @@ Start-VM -Name "MyNewVM"
 Set-VM -Name "MyNewVM" -MemoryStartupBytes 8GB
 
 Get-VM -Name "MyNewVM"
+
