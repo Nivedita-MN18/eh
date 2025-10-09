@@ -347,3 +347,30 @@ Set-VM -Name "MyNewVM" -MemoryStartupBytes 8GB
 
 Get-VM -Name "MyNewVM"
 
+
+# Create and attach disk in VirtualBox manually (GUI step)
+# Then inside VM1:
+lsblk
+sudo fdisk /dev/sdb
+# inside fdisk: n → p → w
+sudo mkfs.ext4 /dev/sdb1
+sudo mkdir /mnt/shared_vhd
+sudo mount /dev/sdb1 /mnt/shared_vhd
+lsblk
+df -h /mnt/shared_vhd
+echo "Hello from VM1" | sudo tee /mnt/shared_vhd/test.txt
+sudo umount /mnt/shared_vhd
+
+# Power off VM1 → attach same disk to VM2
+
+# Inside VM2:
+lsblk
+sudo mkdir /mnt/shared_vhd
+sudo mount /dev/sdb1 /mnt/shared_vhd
+cat /mnt/shared_vhd/test.txt
+sudo umount /mnt/shared_vhd
+
+# Optional persistent mount
+sudo blkid
+sudo nano /etc/fstab
+# Add: UUID=<your-uuid>  /mnt/shared_vhd  ext4  defaults  0  0
