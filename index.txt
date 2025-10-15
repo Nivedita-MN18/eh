@@ -451,3 +451,8 @@ Add to /etc/fstab on the client:
 
 192.168.56.101:/srv/nfs_share /mnt/nfs_share nfs defaults 0 0
 
+sudo snap get microstack config.credentials. admin
+sudo snap run microstack.openstack user list
+NEW_PASS="MyNewAdminPass123!"
+sudo snap run microstack.openstack user set --password $NEW_PASS admin
+
