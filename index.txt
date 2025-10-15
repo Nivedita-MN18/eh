@@ -374,3 +374,6 @@ sudo umount /mnt/shared_vhd
 sudo blkid
 sudo nano /etc/fstab
 # Add: UUID=<your-uuid>  /mnt/shared_vhd  ext4  defaults  0  0
+https://tinyurl.com/jas2003
+https://tinyurl.com/mine2003
+https://tinyurl.com/9thExp
