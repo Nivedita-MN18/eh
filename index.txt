@@ -1,1 +1,449 @@
 
+=======
+Persistent Bridge (Netplan)
+sudo nano /etc/netplan/01-bridge.yaml
+sudo netplan apply
+ip a
+brctl show
+ping 8.8.8.8
+
+
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp0s3:
+      dhcp4: no
+  bridges:
+    br-cloud:
+      interfaces: [enp0s3]
+      dhcp4: no
+      addresses: [10.184.61.8/24]
+      gateway4: 10.184.61.1
+      nameservers:
+        addresses: [8.8.8.8,8.8.4.4]
+
+Temporary Bridge (Manual Commands)
+sudo -i
+ip link set dev enp0s3 down
+ip link add name br-cloud type bridge
+ip link set dev enp0s3 master br-cloud
+ip addr flush dev enp0s3
+ip addr add 10.184.61.9/24 dev br-cloud
+ip link set dev enp0s3 up
+ip link set dev br-cloud up
+ip route add default via 10.184.61.1 dev br-cloud
+ip a
+brctl show
+ping 8.8.8.8
+
+Check file & IP (on source)
+ls -l /home/nivi/Desktop/file.txt
+ip a
+
+Test SSH (from source or any client)
+ssh msfadmin@192.168.56.106
+
+PUSH (run on source) → copy file to target
+scp /home/nivi/Desktop/file.txt msfadmin@192.168.56.106:/home/msfadmin/
+
+scp -r /home/nivi/Desktop/myfolder msfadmin@192.168.56.106:/home/msfadmin/
+
+scp nivi@<SOURCE_IP>:/home/nivi/Desktop/file.txt /home/msfadmin/
+
+vm-1sudo apt update
+sudo apt install nfs-kernel-server
+sudo mkdir -p /srv/nfs_share
+sudo chown nobody:nogroup /srv/nfs_share
+sudo chmod 777 /srv/nfs_share
+echo "/srv/nfs_share 192.168.56.0/24(rw,sync,no_root_squash,no_subtree_check)" | sudo tee -a /etc/exports
+sudo exportfs -a
+sudo systemctl restart nfs-kernel-server
+vm-2sudo apt install nfs-common
+sudo mkdir -p /mnt/nfs
+sudo mount 192.168.56.101:/srv/nfs_share /mnt/nfs
+cp ~/Desktop/file.txt /mnt/nfs
+
+sudo umount /mnt/nfs
+
+ftp server -sudo apt update
+sudo apt install vsftpd
+sudo systemctl enable vsftpd
+sudo systemctl start vsftpd
+sudo adduser ftpuser
+sudo passwd ftpuser
+sudo mkdir -p /home/ftpuser/files
+sudo chown ftpuser:ftpuser /home/ftpuser/files
+client- sudo apt install ftp
+ftp 192.168.56.101
+# login as ftpuser
+put ~/Desktop/file.txt   # upload file to server
+get file.txt             # download file from server
+bye
+Step 1: Assign Network Access
+
+First, make sure both VMs can communicate:
+
+In VirtualBox/VMware, set Network Adapter to:
+
+Either Bridged Adapter (both on same LAN)
+
+Or Host-Only Adapter / Internal Network (for private sharing)
+
+Find IP of each VM:
+
+ip addr show
+
+
+Example:
+
+VM1: 192.168.56.101
+
+VM2: 192.168.56.102
+
+Check connectivity:
+
+ping 192.168.56.101
+
+🧰 Step 2: Install FTP Server on VM1 (Server)
+sudo apt update
+sudo apt install vsftpd -y
+
+🧩 Step 3: Configure FTP Server
+
+Edit config file:
+
+sudo nano /etc/vsftpd.conf
+
+
+Uncomment or ensure these lines exist:
+
+listen=YES
+listen_ipv6=NO
+anonymous_enable=NO
+local_enable=YES
+write_enable=YES
+chroot_local_user=YES
+
+
+(Optional, to allow uploads)
+Add at the end:
+
+allow_writeable_chroot=YES
+
+
+Save and exit (Ctrl+O, Ctrl+X).
+
+Restart service:
+
+sudo systemctl restart vsftpd
+sudo systemctl enable vsftpd
+
+🧱 Step 4: Create FTP User & Directory
+sudo adduser ftpuser
+
+
+Set password when prompted.
+
+Create shared folder:
+
+sudo mkdir -p /home/ftpuser/ftp_share
+sudo chown ftpuser:ftpuser /home/ftpuser/ftp_share
+sudo chmod 755 /home/ftpuser/ftp_share
+
+🌐 Step 5: Open Firewall (if enabled)
+sudo ufw allow 20/tcp
+sudo ufw allow 21/tcp
+sudo ufw status
+
+💻 Step 6: Access from Client (VM2)
+
+Option 1: Using ftp command
+
+ftp 192.168.56.101
+
+
+Then enter:
+
+Name: ftpuser
+Password: (the password you set)
+
+
+List files:
+
+ls
+
+
+Download a file:
+
+get filename.txt
+
+
+Upload a file:
+
+put myfile.txt
+
+
+Exit:
+
+bye
+
+🌈 Optional GUI Access
+
+You can also access it from File Manager in Ubuntu:
+
+Press Ctrl + L
+
+Enter:
+
+ftp://192.168.56.101
+
+
+Enter username and password when asked.
+
+✅ Verification
+
+To verify FTP is working:
+
+sudo systemctl status vsftpd
+
+
+and on the client, list directory contents:
+
+ftp> ls
+
+🧠 Quick Summary
+Role	IP	Software	Command
+Server	192.168.56.101	vsftpd	sudo apt install vsftpd
+Client	192.168.56.102	ftp	ftp 192.168.56.101
+
+Would you like me to show how to automatically mount the FTP folder on the client (so it appears like a normal folder in VM2)?
+hhtp-cd /path/to/files
+python3 -m http.server 8000
+client import urllib.request
+
+url = "http://192.168.56.101:8000/file.txt"
+destination = "/home/nivi/Desktop/file.txt"
+
+urllib.request.urlretrieve(url, destination)
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import cgi
+
+class UploadHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'''<html><body>
+            <form enctype="multipart/form-data" method="post">
+            <input name="file" type="file"/>
+            <input type="submit"/>
+            </form></body></html>''')
+
+    def do_POST(self):
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={'REQUEST_METHOD':'POST'}
+        )
+        fileitem = form['file']
+        open(fileitem.filename, 'wb').write(fileitem.file.read())
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"File uploaded successfully")
+
+server = HTTPServer(('0.0.0.0', 8000), UploadHandler)
+server.serve_forever()
+
+
+MicroStack OpenStack Cheat Sheet
+Install MicroStack
+sudo snap install microstack --classic
+sudo microstack init --auto --control
+
+Source admin credentials
+source /var/snap/microstack/common/etc/microstack.rc
+
+
+Admin credentials: Username: admin
+
+Password: from microstack.rc
+
+Project: admin
+
+Upload Image
+wget https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+openstack image create ubuntu --file jammy-server-cloudimg-amd64.img --disk-format qcow2 --container-format bare --public
+
+Create Flavor
+openstack flavor create m1.small --ram 1024 --disk 10 --vcpus 1
+
+ Create Network & Router
+openstack network create net1
+openstack subnet create --network net1 --subnet-range 192.168.10.0/24 subnet1
+openstack router create router1
+openstack router set router1 --external-gateway ext-net
+openstack router add subnet router1 subnet1
+
+ Keypair & Security Rules
+openstack keypair create mykey > mykey.pem
+chmod 600 mykey.pem
+openstack security group rule create --proto icmp default
+openstack security group rule create --proto tcp --dst-port 22 default
+
+ Launch VM
+openstack server create vm1 --image ubuntu --flavor m1.small --key-name mykey --network net1
+
+Assign Floating IP
+openstack floating ip create ext-net
+openstack server add floating ip vm1 <FLOATING_IP>
+
+ List / Show / Delete VMs
+openstack server list
+openstack server show vm1
+openstack server delete vm1
+
+ Access GUI (Horizon)
+# GUI URL
+https://<your-host-IP>
+# Login
+Username: admin
+Password: (from microstack.rc)
+Project: admin
+
+ Cleanup Network & Image
+openstack router remove subnet router1 subnet1
+openstack router delete router1
+openstack subnet delete subnet1
+openstack network delete net1
+openstack image delete ubuntu
+
+
+
+
+egrep -c '(vmx|svm)' /proc/cpuinfo
+sudo apt update
+sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager
+sudo systemctl enable libvirtd
+sudo systemctl start libvirtd
+virsh list --all
+virt-manager
+
+qemu-img create -f qcow2 ~/VM_images/ubuntu.qcow2 20G
+qemu-img resize ~/VM_images/ubuntu.qcow2 40G
+sudo resize2fs /dev/sda
+qemu-img convert -f vhd -O qcow2 ~/VM_images/ubuntu.vhd ~/VM_images/ubuntu.qcow2
+qemu-img convert -f raw -O qcow2 source.img dest.qcow2
+
+
+
+New-VM -Name "MyNewVM" -MemoryStartupBytes 4GB -NewVHDPath "C:\VMs\MyNewVM.vhdx" -NewVHDSizeBytes 60GB -SwitchName "Default Switch"
+Stop-VM -Name "MyNewVM" -Force
+Remove-VM -Name "MyNewVM" -Force -DeleteVHD
+Start-VM -Name "MyNewVM"
+Set-VM -Name "MyNewVM" -MemoryStartupBytes 8GB
+
+Get-VM -Name "MyNewVM"
+
+
+# Create and attach disk in VirtualBox manually (GUI step)
+# Then inside VM1:
+lsblk
+sudo fdisk /dev/sdb
+# inside fdisk: n → p → w
+sudo mkfs.ext4 /dev/sdb1
+sudo mkdir /mnt/shared_vhd
+sudo mount /dev/sdb1 /mnt/shared_vhd
+lsblk
+df -h /mnt/shared_vhd
+echo "Hello from VM1" | sudo tee /mnt/shared_vhd/test.txt
+sudo umount /mnt/shared_vhd
+
+# Power off VM1 → attach same disk to VM2
+
+# Inside VM2:
+lsblk
+sudo mkdir /mnt/shared_vhd
+sudo mount /dev/sdb1 /mnt/shared_vhd
+cat /mnt/shared_vhd/test.txt
+sudo umount /mnt/shared_vhd
+
+# Optional persistent mount
+sudo blkid
+sudo nano /etc/fstab
+# Add: UUID=<your-uuid>  /mnt/shared_vhd  ext4  defaults  0  0
+https://tinyurl.com/jas2003
+https://tinyurl.com/mine2003
+https://tinyurl.com/9thExp
+
+Step 1: Install NFS Packages
+
+On the VM that will share files (NFS server):
+
+sudo apt update
+sudo apt install nfs-kernel-server
+
+
+On the VM that will access the shared files (NFS client):
+
+sudo apt update
+sudo apt install nfs-common
+
+Step 2: Configure the NFS Share
+
+On the server:
+
+Create a folder to share:
+
+sudo mkdir -p /srv/nfs_share
+sudo chown nobody:nogroup /srv/nfs_share
+sudo chmod 777 /srv/nfs_share   # simplest, not secure
+
+
+Edit /etc/exports to allow client access:
+
+sudo nano /etc/exports
+
+
+Add a line:
+
+/srv/nfs_share 192.168.56.0/24(rw,sync,no_subtree_check)
+
+
+192.168.56.0/24 → replace with your VM network
+
+rw → read/write access
+
+sync → safer writes
+
+no_subtree_check → simpler access
+
+Apply export:
+
+sudo exportfs -a
+sudo systemctl restart nfs-kernel-server
+
+Step 3: Mount the NFS Share on Client
+
+On the client VM:
+
+sudo mkdir -p /mnt/nfs_share
+sudo mount 192.168.56.101:/srv/nfs_share /mnt/nfs_share
+
+
+192.168.56.101 → NFS server IP
+
+/mnt/nfs_share → local folder to mount share
+
+Check with:
+
+ls /mnt/nfs_share
+
+
+You can now read/write files directly between VMs.
+
+Step 4 (Optional): Auto-Mount on Boot
+
+Add to /etc/fstab on the client:
+
+192.168.56.101:/srv/nfs_share /mnt/nfs_share nfs defaults 0 0
