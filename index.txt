@@ -1,7 +1,5 @@
-Check interfaces
-ip a
-ip link show
 
+=======
 Persistent Bridge (Netplan)
 sudo nano /etc/netplan/01-bridge.yaml
 sudo netplan apply
