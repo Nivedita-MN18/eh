@@ -329,6 +329,7 @@ sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils vir
 sudo systemctl enable libvirtd
 sudo systemctl start libvirtd
 virsh list --all
+virsh
 virt-manager
 
 qemu-img create -f qcow2 ~/VM_images/ubuntu.qcow2 20G
@@ -449,3 +450,4 @@ Step 4 (Optional): Auto-Mount on Boot
 Add to /etc/fstab on the client:
 
 192.168.56.101:/srv/nfs_share /mnt/nfs_share nfs defaults 0 0
+
