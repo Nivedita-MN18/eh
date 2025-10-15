@@ -377,3 +377,75 @@ sudo nano /etc/fstab
 https://tinyurl.com/jas2003
 https://tinyurl.com/mine2003
 https://tinyurl.com/9thExp
+
+Step 1: Install NFS Packages
+
+On the VM that will share files (NFS server):
+
+sudo apt update
+sudo apt install nfs-kernel-server
+
+
+On the VM that will access the shared files (NFS client):
+
+sudo apt update
+sudo apt install nfs-common
+
+Step 2: Configure the NFS Share
+
+On the server:
+
+Create a folder to share:
+
+sudo mkdir -p /srv/nfs_share
+sudo chown nobody:nogroup /srv/nfs_share
+sudo chmod 777 /srv/nfs_share   # simplest, not secure
+
+
+Edit /etc/exports to allow client access:
+
+sudo nano /etc/exports
+
+
+Add a line:
+
+/srv/nfs_share 192.168.56.0/24(rw,sync,no_subtree_check)
+
+
+192.168.56.0/24 → replace with your VM network
+
+rw → read/write access
+
+sync → safer writes
+
+no_subtree_check → simpler access
+
+Apply export:
+
+sudo exportfs -a
+sudo systemctl restart nfs-kernel-server
+
+Step 3: Mount the NFS Share on Client
+
+On the client VM:
+
+sudo mkdir -p /mnt/nfs_share
+sudo mount 192.168.56.101:/srv/nfs_share /mnt/nfs_share
+
+
+192.168.56.101 → NFS server IP
+
+/mnt/nfs_share → local folder to mount share
+
+Check with:
+
+ls /mnt/nfs_share
+
+
+You can now read/write files directly between VMs.
+
+Step 4 (Optional): Auto-Mount on Boot
+
+Add to /etc/fstab on the client:
+
+192.168.56.101:/srv/nfs_share /mnt/nfs_share nfs defaults 0 0
